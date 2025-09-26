@@ -24,10 +24,19 @@ RUN pip3 install --no-cache-dir \
     pydantic-ai \
     httpx
 
-# Create a startup script
+# Start Ollama, pull the model during build time, then stop
+RUN ollama serve & \
+    sleep 10 && \
+    echo "Pulling gemma3:270m model during build..." && \
+    ollama pull gemma3:270m && \
+    pkill ollama
+
+# Create a startup script that starts both services
 RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
     echo '# Start Ollama in the background' >> /app/start.sh && \
+    echo 'echo "Starting Ollama server..."' >> /app/start.sh && \
     echo 'ollama serve &' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
     echo '# Wait for Ollama to be ready' >> /app/start.sh && \
@@ -35,20 +44,15 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'while ! curl -s http://localhost:11434/api/version > /dev/null; do' >> /app/start.sh && \
     echo '    sleep 1' >> /app/start.sh && \
     echo 'done' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo '# Pull the gemma3:270m model' >> /app/start.sh && \
-    echo 'echo "Pulling gemma3:270m model..."' >> /app/start.sh && \
-    echo 'ollama pull gemma3:270m' >> /app/start.sh && \
+    echo 'echo "Ollama is ready!"' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
     echo '# Start the FastAPI application' >> /app/start.sh && \
-    echo 'echo "Starting FastAPI application..."' >> /app/start.sh && \
-    echo 'exec uvicorn main:app --host 0.0.0.0 --port 8000' >> /app/start.sh
+    echo 'echo "Starting FastAPI application on port 8000..."' >> /app/start.sh && \
+    echo 'exec python3 main.py' >> /app/start.sh && \
+    chmod +x /app/start.sh
 
-# Make the startup script executable
-RUN chmod +x /app/start.sh
-
-# Expose ports
-EXPOSE 11434 8000
+# Only expose FastAPI port (Ollama runs internally)
+EXPOSE 8000
 
 # Set the startup script as the entrypoint
 ENTRYPOINT ["/app/start.sh"]
